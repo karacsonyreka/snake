@@ -60,7 +60,12 @@
 
   let tickInterval = baseTickInterval;
 
+  const shakeDuration = 400;
+
   let snake, prevSnake, direction, nextDirection, food, score, gameOver, lastTickTime;
+  let tongueVisible = false;
+  let shaking = false;
+  let shakeStartTime = 0;
 
   function randomFoodPosition() {
     let position;
@@ -81,6 +86,7 @@
     score = 0;
     gameOver = false;
     tickInterval = baseTickInterval;
+    shaking = false;
     food = randomFoodPosition();
     lastTickTime = performance.now();
     scoreEl.textContent = 'Score: 0';
@@ -103,11 +109,14 @@
       y: snake[0].y + direction.y
     };
 
-    if (
-      head.x < 0 || head.x >= tileCount ||
-      head.y < 0 || head.y >= tileCount ||
-      snake.some(segment => segment.x === head.x && segment.y === head.y)
-    ) {
+    const hitWall = head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount;
+    const hitSelf = snake.some(segment => segment.x === head.x && segment.y === head.y);
+
+    if (hitWall || hitSelf) {
+      if (hitWall) {
+        shaking = true;
+        shakeStartTime = performance.now();
+      }
       endGame();
       return;
     }
@@ -127,16 +136,6 @@
   function endGame() {
     gameOver = true;
     messageEl.textContent = 'Game Over! Final Score: ' + score + '. Press Space to restart.';
-  }
-
-  function drawRoundedRect(x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r);
-    ctx.closePath();
   }
 
   function drawFood() {
@@ -175,43 +174,89 @@
   function drawSnake(t) {
     const dir = (direction.x === 0 && direction.y === 0) ? { x: 1, y: 0 } : direction;
 
-    for (let i = snake.length - 1; i >= 0; i--) {
-      const segment = snake[i];
+    const points = snake.map((segment, i) => {
       const prev = prevSnake[i] || segment;
-      const drawGridX = prev.x + (segment.x - prev.x) * t;
-      const drawGridY = prev.y + (segment.y - prev.y) * t;
-      const isHead = i === 0;
-      const x = drawGridX * gridSize + 1;
-      const y = drawGridY * gridSize + 1;
-      const size = gridSize - 2;
+      const gx = prev.x + (segment.x - prev.x) * t;
+      const gy = prev.y + (segment.y - prev.y) * t;
+      return { x: gx * gridSize + gridSize / 2, y: gy * gridSize + gridSize / 2 };
+    });
 
-      ctx.fillStyle = isHead ? '#66bb6a' : (i % 2 === 0 ? '#4caf50' : '#43a047');
-      drawRoundedRect(x, y, size, size, isHead ? 8 : 6);
-      ctx.fill();
+    const bodyWidth = gridSize - 4;
 
-      if (isHead) {
-        const cx = drawGridX * gridSize + gridSize / 2;
-        const cy = drawGridY * gridSize + gridSize / 2;
-        const perp = { x: -dir.y, y: dir.x };
-        const forward = gridSize * 0.15;
-        const side = gridSize * 0.2;
+    // continuous body tube
+    if (points.length > 1) {
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = bodyWidth;
+      ctx.strokeStyle = '#4caf50';
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.stroke();
+    }
 
-        [1, -1].forEach((sign) => {
-          const ex = cx + dir.x * forward + perp.x * side * sign;
-          const ey = cy + dir.y * forward + perp.y * side * sign;
-
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(ex, ey, gridSize * 0.13, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = '#000000';
-          ctx.beginPath();
-          ctx.arc(ex + dir.x * gridSize * 0.05, ey + dir.y * gridSize * 0.05, gridSize * 0.06, 0, Math.PI * 2);
-          ctx.fill();
-        });
+    // head shake when the snake bumps into the wall
+    let shakeX = 0;
+    let shakeY = 0;
+    if (shaking) {
+      const elapsed = performance.now() - shakeStartTime;
+      if (elapsed < shakeDuration) {
+        const amplitude = gridSize * 0.25 * (1 - elapsed / shakeDuration);
+        shakeX = Math.sin(elapsed / 20) * amplitude;
+        shakeY = Math.cos(elapsed / 15) * amplitude * 0.5;
+      } else {
+        shaking = false;
       }
     }
+
+    const hx = points[0].x + shakeX;
+    const hy = points[0].y + shakeY;
+
+    ctx.fillStyle = '#66bb6a';
+    ctx.beginPath();
+    ctx.arc(hx, hy, bodyWidth / 2 + 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // tongue flicks out briefly every 5 seconds
+    if (tongueVisible && !gameOver) {
+      const perpTongue = { x: -dir.y, y: dir.x };
+      const forkSpread = gridSize * 0.12;
+      const base = { x: hx + dir.x * (bodyWidth / 2), y: hy + dir.y * (bodyWidth / 2) };
+      const tip = { x: hx + dir.x * (bodyWidth / 2 + gridSize * 0.5), y: hy + dir.y * (bodyWidth / 2 + gridSize * 0.5) };
+
+      ctx.strokeStyle = '#e53935';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(base.x, base.y);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.moveTo(tip.x, tip.y);
+      ctx.lineTo(tip.x + perpTongue.x * forkSpread, tip.y + perpTongue.y * forkSpread);
+      ctx.moveTo(tip.x, tip.y);
+      ctx.lineTo(tip.x - perpTongue.x * forkSpread, tip.y - perpTongue.y * forkSpread);
+      ctx.stroke();
+    }
+
+    // eyes
+    const perp = { x: -dir.y, y: dir.x };
+    const forward = gridSize * 0.12;
+    const side = gridSize * 0.2;
+
+    [1, -1].forEach((sign) => {
+      const ex = hx + dir.x * forward + perp.x * side * sign;
+      const ey = hy + dir.y * forward + perp.y * side * sign;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(ex, ey, gridSize * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(ex + dir.x * gridSize * 0.05, ey + dir.y * gridSize * 0.05, gridSize * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   function draw(t) {
@@ -257,6 +302,11 @@
     draw(t);
     requestAnimationFrame(renderLoop);
   }
+
+  setInterval(() => {
+    tongueVisible = true;
+    setTimeout(() => { tongueVisible = false; }, 400);
+  }, 5000);
 
   initGame();
   requestAnimationFrame(renderLoop);

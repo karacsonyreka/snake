@@ -5,6 +5,7 @@
 3. The snake should move at half speed.
 4. Avoid placing the apples right next to the wall. Make the snake's movement smoother.
 5. Add this feature: the more food the snake eats the quicker the snake's movement.
+6. The snake's tongue should appear every 5 seconds. The snake's body should be continuous. If the snake meets the wall it should shake its head.
 
 
 
@@ -13,7 +14,5 @@
 1. Firstly I saw that only a green and a red dot represented the snake and the food.
 2. When I played the game I found that the snake moves too fast.
 3. When I played again it was too challenging to collect the apples which were placed right next to the wall.
-4. Then I found it too easy, so I added the last feature.
-
-
+4. Then I found it too easy, so I added feature 5.
 
